@@ -257,6 +257,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
 
     alexaEnabled = request->hasArg(F("AL"));
     strlcpy(alexaInvocationName, request->arg(F("AI")).c_str(), 33);
+    alexaSegment = request->hasArg(F("ASEG"));
 
     #ifndef WLED_DISABLE_BLYNK
     strlcpy(blynkHost, request->arg("BH").c_str(), 33);

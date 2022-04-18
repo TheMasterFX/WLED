@@ -11,6 +11,7 @@
 
 #ifndef WLED_DISABLE_ALEXA
 void onAlexaChange(EspalexaDevice* dev);
+void AlexaSetSegment(uint8_t segn);
 
 void alexaInit()
 {
@@ -18,8 +19,20 @@ void alexaInit()
   {
     if (espalexaDevice == nullptr) //only init once
     {
-      espalexaDevice = new EspalexaDevice(alexaInvocationName, onAlexaChange, EspalexaDeviceType::extendedcolor);
+      espalexaDevice = new EspalexaDevice(alexaInvocationName, onAlexaChange, EspalexaDeviceType::extendedcolor);   
       espalexa.addDevice(espalexaDevice);
+      
+      if(alexaSegment)
+      {
+        for (uint8_t i = 0; i < strip.getMaxSegments(); i++) {
+          if(i >= ESPALEXA_MAXDEVICES) break;
+          WS2812FX::Segment& seg = strip.getSegment(i);
+          if (seg.isActive()){
+            espalexaDevice = new EspalexaDevice(seg.name, onAlexaChange, EspalexaDeviceType::extendedcolor);
+            espalexa.addDevice(espalexaDevice);
+          }
+        }
+      }
       espalexa.begin(&server);
     } else {
       espalexaDevice->setName(alexaInvocationName);
@@ -35,8 +48,12 @@ void handleAlexa()
 
 void onAlexaChange(EspalexaDevice* dev)
 {
-  EspalexaDeviceProperty m = espalexaDevice->getLastChangedProperty();
-  
+  EspalexaDeviceProperty m = dev->getLastChangedProperty();
+  uint8_t segment = dev->getId();
+  if(segment > 0){
+    AlexaSetSegment(segment-1);
+  }
+
   if (m == EspalexaDeviceProperty::on)
   {
     if (!macroAlexaOn)
@@ -44,11 +61,16 @@ void onAlexaChange(EspalexaDevice* dev)
       if (bri == 0)
       {
         bri = briLast;
-        stateUpdated(CALL_MODE_ALEXA);
+        if(segment > 0){
+          strip.getSegment(segment-1).setOption(SEG_OPTION_ON, 1);
+        }
+        else {
+          stateUpdated(CALL_MODE_ALEXA);
+        }
       }
     } else {
       applyPreset(macroAlexaOn, CALL_MODE_ALEXA);
-      if (bri == 0) espalexaDevice->setValue(briLast); //stop Alexa from complaining if macroAlexaOn does not actually turn on
+      if (bri == 0) dev->setValue(briLast); //stop Alexa from complaining if macroAlexaOn does not actually turn on
     }
   } else if (m == EspalexaDeviceProperty::off)
   {
@@ -58,27 +80,37 @@ void onAlexaChange(EspalexaDevice* dev)
       {
         briLast = bri;
         bri = 0;
-        stateUpdated(CALL_MODE_ALEXA);
+        if(segment > 0){
+          strip.getSegment(segment-1).setOption(SEG_OPTION_ON, 0);
+        }
+        else {
+          stateUpdated(CALL_MODE_ALEXA);
+        }
       }
     } else {
       applyPreset(macroAlexaOff, CALL_MODE_ALEXA);
-      if (bri != 0) espalexaDevice->setValue(0); //stop Alexa from complaining if macroAlexaOff does not actually turn off
+      if (bri != 0) dev->setValue(0); //stop Alexa from complaining if macroAlexaOff does not actually turn off
     }
   } else if (m == EspalexaDeviceProperty::bri)
   {
-    bri = espalexaDevice->getValue();
-    stateUpdated(CALL_MODE_ALEXA);
+    bri = dev->getValue();
+    if(segment > 0){
+      strip.getSegment(segment-1).setOpacity(bri, segment-1);
+    }
+    else {
+      stateUpdated(CALL_MODE_ALEXA);
+    }
   } else //color
   {
-    if (espalexaDevice->getColorMode() == EspalexaColorMode::ct) //shade of white
+    if (dev->getColorMode() == EspalexaColorMode::ct) //shade of white
     {
       byte rgbw[4];
-      uint16_t ct = espalexaDevice->getCt();
+      uint16_t ct = dev->getCt();
 			if (!ct) return;
 			uint16_t k = 1000000 / ct; //mireds to kelvin
 			
 			if (strip.hasCCTBus()) {
-				strip.setCCT(k);
+        strip.setCCT(k);
 				rgbw[0]= 0; rgbw[1]= 0; rgbw[2]= 0; rgbw[3]= 255;
 			} else if (strip.hasWhiteChannel()) {
         switch (ct) { //these values empirically look good on RGBW
@@ -94,10 +126,25 @@ void onAlexaChange(EspalexaDevice* dev)
       }
       strip.setColor(0, rgbw[0], rgbw[1], rgbw[2], rgbw[3]);
     } else {
-      uint32_t color = espalexaDevice->getRGB();
+      uint32_t color = dev->getRGB();
       strip.setColor(0, color);
     }
     stateUpdated(CALL_MODE_ALEXA);
+  }
+}
+
+void AlexaSetSegment(uint8_t segn){
+  for (uint8_t i = 0; i < strip.getMaxSegments(); i++) {
+    if(i >= ESPALEXA_MAXDEVICES) break;
+    WS2812FX::Segment& seg = strip.getSegment(i);
+    if (seg.isActive()){
+      if(i == segn){
+        seg.setOption(SEG_OPTION_SELECTED,1);     
+      }
+      else{
+        seg.setOption(SEG_OPTION_SELECTED,0);
+      }
+    }
   }
 }
 
